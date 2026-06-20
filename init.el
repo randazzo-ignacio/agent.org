@@ -45,28 +45,18 @@
   :config
   (evil-collection-init))
 
-;;; 4. GPTEL (Local Ollama Setup)
+;;; 4. GPTEL (Anthropic Claude Setup)
 (use-package gptel
-  :ensure t
-  ;:config
-  ;;; Tell gptel to use your local Ollama server
-  ;(setq gptel-backend (gptel-make-ollama "Ollama"
-  ;                      :host "192.168.2.69:11434"
-  ;                      :stream t
-  ;                      :models '("qwen2.5-coder-ctx64k:latest")))
-  ;
-  ;;; Set the blazing fast 7B model as your default
-  ;(setq gptel-model "qwen2.5-coder-ctx64k:latest"))
-)
+  :ensure t)
 
-;; Initialize the Gemini backend
+;; Initialize the Anthropic (Claude) backend
 (setq-default gptel-backend
-   (gptel-make-gemini "Gemini"
-     :key (getenv "GEMINI_API_KEY") 
+   (gptel-make-anthropic "Claude"
+     :key (getenv "CLAUDE_API_KEY")
      :stream t))
 
 ;; Set the default model to the heavyweight logic engine
-(setq-default gptel-model "gemini-flash-latest")
+(setq-default gptel-model 'claude-opus-4-20250514)
 
 ;;; 5. GPTEL TOOL CALLING (Docker Sandbox Execution)
 
@@ -178,10 +168,10 @@ Automatically trims whitespace to prevent newline matching errors."
 (add-to-list 'gptel-tools
              (gptel-make-tool
               :name "replace_in_file"
-              :description "Surgically replace a specific block of text in an existing file."
-              :args '((:name "path" :type string :description "Target file path")
-                      (:name "search_text" :type string :description "The exact existing text to find")
-                      (:name "replace_text" :type string :description "The new text to insert"))
+                            :description "Surgically replace a specific block of text in an existing file."
+              :args '((:name "path" :type "string" :description "Target file path")
+                      (:name "search_text" :type "string" :description "The exact existing text to find")
+                      (:name "replace_text" :type "string" :description "The new text to insert"))
               :function #'ouroboros-replace-in-file))
 
 ;;; 7. DYNAMIC AGENT LOADER
@@ -221,8 +211,8 @@ Automatically trims whitespace to prevent newline matching errors."
     ;; 2. THE MISSING LINK: Overwrite the hidden transient shadow variable
     (setq-local gptel--system-message parsed-profile)
     
-    (message "✅ Agent [%s] loaded! Context starts with: %s..." 
-             selected-file 
+                (message "[OK] Agent [%s] loaded! Context starts with: %s..."
+             selected-file
              (replace-regexp-in-string "\n" " " (substring parsed-profile 0 (min 60 (length parsed-profile)))))))
 
 ;; Bind it to a convenient shortcut in your gptel chat buffers
@@ -236,9 +226,14 @@ Automatically trims whitespace to prevent newline matching errors."
 
 (require 'json)
 
-;; Define our safe RPM throttle (5 seconds ensures we stay well under the 15 RPM limit)
-(defvar ouroboros-api-pacing-delay 5.0
-  "Seconds to wait before automatically chaining the next LLM turn to prevent 429 errors.")
+;;; -- API PACING / THROTTLE STATE --
+;; Single source of truth for request pacing. Used by BOTH the autonomous
+;; tool-chain loop and the native gptel-request advice below.
+(defvar ouroboros-last-api-time 0.0
+  "Timestamp (float-time) of the last API request.")
+
+(defvar ouroboros-api-pacing-delay 4.5
+  "Seconds to wait between API requests to respect the provider RPM limit.")
 
 (defun ouroboros-universal-tool-interceptor (beg end)
   "Parse JSON tool blocks safely, inject results, and pace the API requests."
@@ -303,12 +298,6 @@ Automatically trims whitespace to prevent newline matching errors."
                        (message "Ouroboros: Buffer closed, aborting scheduled chain.")))
                    (current-buffer)))))
 (add-hook 'gptel-post-response-functions #'ouroboros-universal-tool-interceptor)
-
-(defvar ouroboros-last-api-time 0.0
-  "Timestamp of the last API request.")
-
-(defvar ouroboros-api-pacing-delay 4.5
-  "Seconds to wait between API requests to respect Gemini's 15 RPM limit.")
 
 (defun ouroboros-pace-native-gptel (orig-fun &rest args)
   "Force a mechanical delay before any gptel network request."
