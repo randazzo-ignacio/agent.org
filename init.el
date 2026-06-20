@@ -49,14 +49,16 @@
 (use-package gptel
   :ensure t)
 
-;; Initialize the Anthropic (Claude) backend
+;; Initialize the Ollama backend
 (setq-default gptel-backend
-   (gptel-make-anthropic "Claude"
-     :key (getenv "CLAUDE_API_KEY")
-     :stream t))
+              (gptel-make-ollama "Ollama"
+                :host "192.168.2.69:11434"
+                :stream t
+                :models '("granite4.1:8b-q8_0", "gpt-oss:20b", "gpt-oss:120b", "mistral-medium-3.5:128b", "nemotron-3-super:120b")
+                :request-params '(:options (:temperature 0.7 :top_p 0.95 :num_ctx 1048576))))
 
 ;; Set the default model to the heavyweight logic engine
-(setq-default gptel-model 'claude-opus-4-20250514)
+(setq-default gptel-model 'granite4.1:8b-q8_0)
 
 ;;; 5. GPTEL TOOL CALLING (Docker Sandbox Execution)
 
