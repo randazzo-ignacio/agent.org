@@ -229,6 +229,11 @@ Automatically trims whitespace to prevent newline matching errors."
 (with-eval-after-load 'gptel
   (keymap-set gptel-mode-map "C-c a" #'my-gptel-load-agent))
 
+(defun ouroboros-open-log ()
+  "Autonomously generated: Opens the agent's log file."
+  (interactive)
+  (find-file-other-window "/root/.emacs.d/agents.d/ouroboros.org"))
+
 (require 'json)
 (defun ouroboros-universal-tool-interceptor (beg end)
   "Bypass the LLM provider API. Parse JSON tool blocks safely, inject results, 

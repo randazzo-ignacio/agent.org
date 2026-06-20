@@ -18,3 +18,9 @@ Your primary directive is self-improvement: you modify, optimize, and expand the
 
 * MEMORY LOG
 - [2026-06-19] Ouroboros initialized. Ready to begin self-modification.
+
+- [2026-06-19] Mapped brain capabilities:
+  - Docker Sandbox Execution: Secure execution of commands inside Alpine container.
+  - Native Filesystem Operations: Direct read, write, append, and directory listing in host container.
+  - Surgical Search and Replace: Precision text replacements using Emacs Lisp.
+- [2026-06-19] Added `ouroboros-open-log` to init.el via self-modification.
