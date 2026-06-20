@@ -212,8 +212,10 @@
 (with-eval-after-load 'gptel
   (keymap-set gptel-mode-map "C-c a" #'my-gptel-load-agent))
 
+(require 'json)
+
 (defun ouroboros-universal-tool-interceptor (beg end)
-  "Bypass the LLM provider API. Parse tool blocks safely, inject results, 
+  "Bypass the LLM provider API. Parse JSON tool blocks safely, inject results, 
 and automatically chain the next LLM turn if a tool was run."
   (message "Ouroboros: Scanning response for tool blocks...")
   (let ((tool-executed-p nil))
@@ -222,19 +224,23 @@ and automatically chain the next LLM turn if a tool was run."
         (narrow-to-region beg end)
         (goto-char (point-min))
         
-        ;; V5 UPDATE: Bulletproof minimal-match regex
         (while (re-search-forward (rx "```tool" (zero-or-more (any space "\n" "\r"))
                                       (group (minimal-match (zero-or-more anything)))
                                       "\n" (zero-or-more space) "```")
                                   nil t)
-          (let* ((code-str (match-string 1))
-                 (_ (message "Ouroboros: Found tool block: %s" (string-trim code-str)))
-                 (tool-expr (ignore-errors (read code-str)))
+          (let* ((json-str (match-string 1))
+                 (_ (message "Ouroboros: Found JSON block: %s" (string-trim json-str)))
+                 ;; Force json-read to parse objects as alists with symbol keys
+                 (json-object-type 'alist)
+                 (json-array-type 'list)
+                 (tool-expr (condition-case err
+                                (json-read-from-string json-str)
+                              (error nil)))
                  result)
-            (if (not (listp tool-expr))
-                (setq result (format "ERROR: Tool call must be a valid Elisp list. Got: %s" code-str))
-              (let* ((tool-name (symbol-name (car tool-expr)))
-                     (args-plist (cdr tool-expr))
+            (if (not tool-expr)
+                (setq result (format "ERROR: Tool block must be valid JSON. Got: %s" json-str))
+              (let* ((tool-name (cdr (assoc 'name tool-expr)))
+                     (args-alist (cdr (assoc 'args tool-expr)))
                      (tool (cl-find tool-name gptel-tools :key #'gptel-tool-name :test #'equal)))
                 (if (not tool)
                     (setq result (format "ERROR: Tool '%s' not found in system." tool-name))
@@ -243,8 +249,8 @@ and automatically chain the next LLM turn if a tool was run."
                          (positional-args
                           (mapcar (lambda (arg-def)
                                     (let* ((arg-name (plist-get arg-def :name))
-                                           (keyword-sym (intern (concat ":" arg-name))))
-                                      (plist-get args-plist keyword-sym)))
+                                           (val (cdr (assoc (intern arg-name) args-alist))))
+                                      val))
                                   tool-args-def)))
                     (message "Ouroboros: Executing %s with args %S" tool-name positional-args)
                     (setq result (condition-case err
