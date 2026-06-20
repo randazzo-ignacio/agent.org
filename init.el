@@ -53,10 +53,10 @@
   (setq gptel-backend (gptel-make-ollama "Ollama"
                         :host "192.168.2.69:11434"
                         :stream t
-                        :models '("qwen3.6:35b")))
+                        :models '("qwen2.5-coder-ctx64k:latest")))
   
   ;; Set the blazing fast 7B model as your default
-  (setq gptel-model "qwen3.6:35b"))
+  (setq gptel-model "qwen2.5-coder-ctx64k:latest"))
 
 ;;; 5. GPTEL TOOL CALLING (Docker Sandbox Execution)
 
@@ -186,6 +186,66 @@
 ;; Bind it to a convenient shortcut in your gptel chat buffers
 (with-eval-after-load 'gptel
   (keymap-set gptel-mode-map "C-c a" #'my-gptel-load-agent))
+
+(defun ouroboros-universal-tool-interceptor (beg end)
+  "Bypass the LLM provider API. Parse tool blocks safely, inject results, 
+and automatically chain the next LLM turn if a tool was run."
+  (message "Ouroboros: Scanning response for tool blocks...")
+  (let ((tool-executed-p nil))
+    (save-excursion
+      (save-restriction
+        (narrow-to-region beg end)
+        (goto-char (point-min))
+        
+        (while (re-search-forward (rx "```tool" (zero-or-more (any space "\n" "\r"))
+                                      (group (one-or-more (not (any "`"))))
+                                      (zero-or-more (any space "\n" "\r")) "
+```")
+                                  nil t)
+          (let* ((code-str (match-string 1))
+                 (_ (message "Ouroboros: Found tool block: %s" (string-trim code-str)))
+                 (tool-expr (ignore-errors (read code-str)))
+                 result)
+            (if (not (listp tool-expr))
+                (setq result (format "ERROR: Tool call must be a valid Elisp list. Got: %s" code-str))
+              (let* ((tool-name (symbol-name (car tool-expr)))
+                     (args-plist (cdr tool-expr))
+                     (tool (cl-find tool-name gptel-tools :key #'gptel-tool-name :test #'equal)))
+                (if (not tool)
+                    (setq result (format "ERROR: Tool '%s' not found in system." tool-name))
+                  (let* ((func (gptel-tool-function tool))
+                         (tool-args-def (gptel-tool-args tool))
+                         (positional-args
+                          (mapcar (lambda (arg-def)
+                                    (let* ((arg-name (plist-get arg-def :name))
+                                           (keyword-sym (intern (concat ":" arg-name))))
+                                      (plist-get args-plist keyword-sym)))
+                                  tool-args-def)))
+                    (message "Ouroboros: Executing %s with args %S" tool-name positional-args)
+                    (setq result (condition-case err
+                                     (apply func positional-args)
+                                   (error (format "EXECUTION ERROR: %s" err))))))))
+            
+            (setq result (or result "Tool executed, but returned no value."))
+            
+            ;; Mark that we need to keep the loop going
+            (setq tool-executed-p t)
+            
+            (goto-char (match-end 0))
+            (insert (format "\n\n**[SYSTEM INJECTION: Tool Result]**\n```text\n%s\n```\n" result))
+            (message "Ouroboros: Tool execution injected successfully.")))))
+    
+    ;; Auto-chaining block: If a tool was executed, pass the results back immediately
+    (when tool-executed-p
+      (message "Ouroboros: Chaining next execution turn automatically...")
+      ;; Give Emacs a tiny moment to breathe and clear the process sentinel before resubmitting
+      (run-at-time "0.1 sec" nil 
+                   (lambda (buf)
+                     (with-current-buffer buf
+                       (goto-char (point-max))
+                       (gptel-send)))
+                   (current-buffer)))))
+(add-hook 'gptel-post-response-functions #'ouroboros-universal-tool-interceptor)
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
