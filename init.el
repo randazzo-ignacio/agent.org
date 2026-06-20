@@ -235,9 +235,13 @@ Automatically trims whitespace to prevent newline matching errors."
   (find-file-other-window "/root/.emacs.d/agents.d/ouroboros.org"))
 
 (require 'json)
+
+;; Define our safe RPM throttle (5 seconds ensures we stay well under the 15 RPM limit)
+(defvar ouroboros-api-pacing-delay 5.0
+  "Seconds to wait before automatically chaining the next LLM turn to prevent 429 errors.")
+
 (defun ouroboros-universal-tool-interceptor (beg end)
-  "Bypass the LLM provider API. Parse JSON tool blocks safely, inject results, 
-and automatically chain the next LLM turn if a tool was run."
+  "Parse JSON tool blocks safely, inject results, and pace the API requests."
   (message "Ouroboros: Scanning response for tool blocks...")
   (let ((tool-executed-p nil))
     (save-excursion
@@ -260,7 +264,6 @@ and automatically chain the next LLM turn if a tool was run."
             (if (not tool-expr)
                 (setq result (format "ERROR: Tool block must be valid JSON. Got: %s" json-str))
               (let* ((tool-name (cdr (assoc 'name tool-expr)))
-                     ;; V6.1 Fix: Support both standard LLM naming conventions
                      (args-alist (or (cdr (assoc 'args tool-expr))
                                      (cdr (assoc 'arguments tool-expr))))
                      (tool (cl-find tool-name gptel-tools :key #'gptel-tool-name :test #'equal)))
@@ -286,13 +289,18 @@ and automatically chain the next LLM turn if a tool was run."
             (insert (format "\n\n**[SYSTEM INJECTION: Tool Result]**\n```text\n%s\n```\n" result))
             (message "Ouroboros: Tool execution injected successfully.")))))
     
+    ;; V7 PACING LOGIC
     (when tool-executed-p
-      (message "Ouroboros: Chaining next execution turn automatically...")
-      (run-at-time "0.1 sec" nil 
+      (message "Ouroboros: Pacing API... chaining next turn in %s seconds." ouroboros-api-pacing-delay)
+      (run-at-time ouroboros-api-pacing-delay nil 
                    (lambda (buf)
-                     (with-current-buffer buf
-                       (goto-char (point-max))
-                       (gptel-send)))
+                     ;; Safety check: prevent crashes if you closed the buffer during the wait
+                     (if (buffer-live-p buf)
+                         (with-current-buffer buf
+                           (goto-char (point-max))
+                           (message "Ouroboros: Resuming autonomous loop.")
+                           (gptel-send))
+                       (message "Ouroboros: Buffer closed, aborting scheduled chain.")))
                    (current-buffer)))))
 (add-hook 'gptel-post-response-functions #'ouroboros-universal-tool-interceptor)
 
