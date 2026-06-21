@@ -16,6 +16,8 @@
 
 ;; Native filesystem tools for gptel
 (load "fs_tools.el")
+;; Local code execution tools for gptel
+(load "code_tools.el")
 
 ;; Replacement utility tool
 (load "replacement_tool.el")
