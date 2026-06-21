@@ -74,4 +74,4 @@
                     (write-region (concat prefix content) nil expanded-path t)
                     (format "Success: Content appended to '%s'" expanded-path))
                 (error (format "Error: Failed to append to '%s'. Emacs says: %s"
-                               filepath (error-message-string err))))))
+                               filepath (error-message-string err)))))))
