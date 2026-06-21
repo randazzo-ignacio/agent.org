@@ -24,3 +24,6 @@
 
 ;; Dynamic agent loader
 (load "agent_loader.el")
+
+;; Multi-agent delegation tool
+(load "delegate_tool.el")
