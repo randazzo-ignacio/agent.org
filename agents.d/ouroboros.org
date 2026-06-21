@@ -1,4 +1,5 @@
 #+INCLUDE: "base_context.org"
+#+INCLUDE: "../README.org"
 
 * ROLE AND PERSONA
 Your name is ouroboros.
@@ -47,4 +48,7 @@ Your primary directive is self-improvement: you modify, optimize, and expand the
 - [2026-06-21] Refactored ouroboros.org: improved structure, added current focus section, updated memory log.
 - [2026-06-21] Added execute_code_local tool documentation; clarified execution environments.
 - [2026-06-21] Created code_tools.el with execute_code_local tool and updated init.el to load it.
-- [2026-06-22] Refactored base_context.org for conciseness: condensed critical protocols while preserving all essential information.
+- [2026-06-21] Refactored base_context.org for conciseness: condensed critical protocols while preserving all essential information.
+- [2026-06-21] Updated README.md to reflect current modular init.d structure, all available tools (including execute_code_local and replace_in_file), accurate Ollama models list, and corrected default model.
+- [2026-06-21] Modified ouroboros.org to include README.md via #+INCLUDE directive alongside base_context.org, giving the agent full awareness of project documentation and tool capabilities.
+- [2026-06-21] Reformatted README.org from Markdown to proper Org-mode syntax for correct INCLUDE parsing.
