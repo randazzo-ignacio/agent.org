@@ -76,16 +76,21 @@ Returns a plist with :buffer, :task-id, :agent, :start-time."
       ;; with NO argument (nil arg = normal send, reads buffer up to point).
       ;; Do NOT pass the prompt string as an argument to gptel-send --
       ;; gptel-send's optional arg is a prefix arg, not a prompt.
-      (insert full-prompt)
-      (gptel-send))
-    (list :buffer buf :task-id task-id :agent agent-name :start-time (current-time))))
+                  (insert full-prompt)
+      (let ((response-start (point)))
+        (gptel-send)
+        (list :buffer buf :task-id task-id :agent agent-name
+              :start-time (current-time) :response-start response-start))))
 
 (defun my-gptel--wait-for-delegate (delegate-info timeout)
   "Wait for delegate buffer to finish processing. Returns the response string.
-TIMEOUT in seconds (nil = wait forever)."
+TIMEOUT in seconds (nil = wait forever).
+On timeout, returns whatever partial response was generated so far,
+behaving as if the sub-agent simply reached its output limit."
   (let* ((buf (plist-get delegate-info :buffer))
          (task-id (plist-get delegate-info :task-id))
          (start (plist-get delegate-info :start-time))
+         (resp-start (plist-get delegate-info :response-start))
          (deadline (when timeout (time-add start (seconds-to-time timeout))))
          response)
     (unwind-protect
@@ -96,14 +101,28 @@ TIMEOUT in seconds (nil = wait forever)."
                       (or (null timeout)
                           (time-less-p (current-time) deadline)))
             (sit-for 0.2))
-          ;; Check for timeout or buffer death
+          ;; Check for buffer death, timeout, or completion
           (cond
            ((not (buffer-live-p buf))
             (setq response nil))
            ((and timeout
                  (not (buffer-local-value 'my-gptel--delegate-done buf)))
+            ;; Timeout reached: abort the request and capture partial response
             (gptel-abort buf)
-            (error "Delegate '%s' timed out after %d seconds" task-id timeout))
+            (sit-for 0.3)  ; brief pause to let abort settle
+            (let ((partial
+                   (when (buffer-live-p buf)
+                     (with-current-buffer buf
+                       (let ((end (point-max)))
+                         (if (and resp-start (< resp-start end))
+                             (buffer-substring-no-properties resp-start end)
+                           ""))))))
+              (setq response
+                    (if (and partial (string-match-p "\\S-" partial))
+                        (format "[TIMEOUT after %ds — partial response captured]\n\n%s"
+                                timeout partial)
+                      (format "[TIMEOUT after %ds — no response was generated before timeout]"
+                              timeout)))))
            (t
             (setq response
                   (buffer-local-value 'my-gptel--delegate-response buf)))))
@@ -119,7 +138,7 @@ TIMEOUT in seconds (nil = wait forever)."
 AGENT: Profile name (string) - must exist as .org file in agents.d/
 TASK: What you want the sub-agent to accomplish (string).
 CONTEXT: Relevant context from the current conversation (string, optional).
-TIMEOUT: Maximum seconds to wait for delegate response (integer, optional, default 120).
+TIMEOUT: Maximum seconds to wait for delegate response (integer, optional, default 600).
 Matches gptel tool calling convention: individual positional arguments
 via `gptel--map-tool-args' -> `apply'."
   ;; Validate inputs
@@ -134,7 +153,7 @@ via `gptel--map-tool-args' -> `apply'."
                    ((integerp timeout) timeout)
                    ((stringp timeout) (string-to-number timeout))
                    ((numberp timeout) (floor timeout))
-                   (t 120)))
+                   (t 600)))
          (delegate-info (my-gptel--spawn-delegate agent task context))
          (response (my-gptel--wait-for-delegate delegate-info timeout)))
     (if (and response (string-match-p "\\S-" response))
@@ -149,7 +168,7 @@ via `gptel--map-tool-args' -> `apply'."
   :args (list '(:name "agent" :type "string" :description "Profile name (e.g., 'coder', 'reviewer', 'researcher', 'ouroboros'). Must exist as .org file in agents.d/")
               '(:name "task" :type "string" :description "What you want the sub-agent to accomplish. Be specific and detailed.")
               '(:name "context" :type "string" :description "Relevant context from the current conversation to pass along. Optional but recommended.")
-              '(:name "timeout" :type "integer" :description "Maximum seconds to wait for delegate response. Default 120." :optional t))
+              '(:name "timeout" :type "integer" :description "Maximum seconds to wait for delegate response. Default 600." :optional t))
   :function #'my-gptel-tool-delegate))
 
 (provide 'delegate_tool)

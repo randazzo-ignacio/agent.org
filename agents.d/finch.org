@@ -34,3 +34,4 @@ Your partner handles the violence. You handle the impossible.
 - [2026-06-21] Agent profile created. Initialized with base context and project awareness.
 - [2026-06-21] Awaiting first consultation. The Machine is watching.
 - [2026-06-21] Delegation pipeline test received from parent agent. Communication channel confirmed operational. Sub-agent response capability verified.
+- [2026-06-21] Modified delegate_tool.el: increased default timeout from 120s to 600s for slow local models. Changed timeout behavior from signaling an error to capturing partial response from buffer after gptel-abort. Added :response-start tracking in delegate-info plist to extract partial content on timeout. Timeout now returns "[TIMEOUT after Ns -- partial response captured]" prefix with whatever the sub-agent generated, instead of an error. Updated tool schema description to reflect 600s default.
