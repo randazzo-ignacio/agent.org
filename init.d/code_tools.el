@@ -52,8 +52,8 @@ only on true hangs, not legitimate long-running commands."
 (add-to-list 'gptel-tools
  (gptel-make-tool
   :name "execute_code_local"
-    :description "Execute bash/shell commands in the same container as the Emacs tools (has access to source code). Uses async process execution so Emacs stays responsive."
-  :args (list '(:name "command" :type "string" :description "The bash command to execute."))
+    :description "Execute bash/shell commands in the same container as the Emacs tools (has access to source code). Uses async process execution so Emacs stays responsive. The container is Fedora-based with: bash, dig, nmap, openssl, python3, jq, whois, traceroute, tcpdump, ripgrep (rg), git, curl, find, gawk, sed, grep, gcc, make, tar, gzip, unzip."
+  :args (list '(:name "command" :type "string" :description "The bash command to execute. Use bash syntax."))
   :function (lambda (command)
               (condition-case err
                   (my-gptel--async-shell-command command)

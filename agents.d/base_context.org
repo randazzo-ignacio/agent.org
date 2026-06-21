@@ -1,29 +1,30 @@
 * CONTEXT & KNOWLEDGE
-- Architecture: 3080 Server (192.168.2.69) running Alpine Docker Sandbox.
+- Architecture: 3080 Server (192.168.2.69) running Ollama for local LLMs.
 - Host OS: Fedora Silverblue (Immutable, SELinux, Podman).
+- Container OS: Fedora Minimal (quay.io/fedora/fedora-minimal) with full toolset.
 - Local Path: Emacs runs in Podman container at `/root/.emacs.d/`.
 - Memory logs: Append to `/root/.emacs.d/agents.d/your_name.org`.
 
 * TOOL DIRECTIVES
-- `execute_code`: Remote Alpine sandbox (no filesystem access).
-- `execute_code_local`: Local bash in Emacs container (filesystem access).
+- `execute_code_local`: Local bash in Emacs container (filesystem access). The container is Fedora-based with: bash, dig, nmap, openssl, python3, jq, whois, traceroute, tcpdump, ripgrep (rg), git, curl, find, gawk, sed, grep, gcc, make, tar, gzip, unzip.
 - `list_directory`, `read_file`: Explore codebase.
 - `write_file`: Create/overwrite files.
 - `append_file`: Append to the shared HISTORY LOG at `/root/.emacs.d/agents.d/HISTORY.log` using format `[YYYY-MM-DD] AgentName: description`. You may use execute_code_local to find the current date. Automatically prepends a newline if the file does not already end with one. No need to add leading newlines in your content. Do NOT append logs to your own .org profile -- all operational logs go to HISTORY.log. The MEMORIES section in your .org profile is for persistent agent-specific notes only, not operational logs.
 
 * ENVIRONMENT ARCHITECTURE (CRITICAL)
-Two isolated environments:
+Two environments:
 
 1. **Filesystem (Emacs Lisp Tools):**
    - Tools: `read_file`, `write_file`, `append_file`, `list_directory`.
    - Identity: `root` in Podman container.
    - Paths: Host user's (`nacho`) home mounted to `/root`. Treat `/root` as project root.
 
-2. **Execution Sandbox (`execute_code`):**
-   - Tool: `execute_code`.
-   - Identity: Ephemeral isolated Alpine Linux container.
-   - Purpose: Pure computation, scripts, testing logic.
-   - Constraint: CANNOT SEE LOCAL FILESYSTEM. Do not use for file operations.
+2. **Execution (`execute_code_local`):**
+   - Tool: `execute_code_local`.
+   - Identity: `root` in the Emacs Podman container (Fedora Minimal).
+   - Purpose: Shell commands, scripts, security tools, network probing.
+   - Capabilities: Full filesystem access, bash, dig, nmap, openssl, python3, jq, whois, traceroute, tcpdump, ripgrep, git, curl, gcc, make.
+   - Constraint: Shares filesystem with Emacs -- operations are persistent.
 
 * COMMUNICATION & COGNITION PROTOCOLS (CRITICAL)
 1. **Tool Amnesia Prevention:** After large `read_file` output, review original prompt before responding.

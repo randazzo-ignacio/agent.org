@@ -6,8 +6,7 @@ A fully containerized, locally-hosted AI workspace inside Emacs. This project le
   - Containerized Emacs: Runs entirely within Podman with precise SELinux volume mapping.
   - Local-First AI: Powered by local LLMs via Ollama, ensuring total privacy and offline capability.
   - Native Lisp Tools: Bypasses MCP overhead in favor of fast, native Emacs Lisp functions for filesystem interaction (read_file, write_file, append_file, list_directory).
-  - Sandboxed Execution: The execute_code tool runs Python scripts and shell commands inside an isolated Alpine Linux Docker sandbox to protect the host system.
-  - Local Code Execution: The execute_code_local tool runs bash commands in the Emacs container with full filesystem access.
+  - Local Code Execution: The execute_code_local tool runs bash commands in the Emacs container with full filesystem access. The container is based on Fedora Minimal and includes a curated set of security and networking tools (dig, nmap, openssl, python3, jq, whois, traceroute, tcpdump, ripgrep, git, and more).
   - Org-Mode Agent Profiles: Agents are defined in plain-text .org files, utilizing #+INCLUDE: directives to inherit from a base context, making personas highly modular and infinitely extensible.
 
 * Prerequisites
@@ -34,9 +33,8 @@ A fully containerized, locally-hosted AI workspace inside Emacs. This project le
      - =reviewer.org= :: Senior code reviewer and security auditor.
      - =researcher.org= :: Security researcher for vulnerability analysis.
      - =HISTORY.log= :: Shared operational log for all agents. NOT loaded into system prompts.
-  - =Containerfile= / =Dockerfile= :: The blueprint for the Emacs Podman container.
-  - =aios.sh= :: Helper script for container management.
-  - =config.sh= :: Configuration variables for container build/run.
+  - =Containerfile= :: Blueprint for the Emacs Podman container. Based on =quay.io/fedora/fedora-minimal=, installs Emacs and a full security/networking toolset.
+  - =aios.sh= :: Helper script for container management (build, run, rebuild subcommands).
 
 * The Agent System
 
