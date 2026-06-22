@@ -39,3 +39,6 @@
 
 ;; Task reader and unified history tools
 (load "task_tools.el")
+
+;; Session persistence (save/restore gptel chat sessions)
+(load "session_persistence.el")
