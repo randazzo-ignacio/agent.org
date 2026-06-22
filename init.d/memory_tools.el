@@ -2,7 +2,7 @@
 
 ;;; Memory Summarization Tool for gptel
 ;; Provides an interactive command (C-c m) that summarizes the current
-;; conversation into the loaded agent's MEMORIES section.
+;; conversation into the loaded agent's MEMORIES.md file.
 ;;
 ;; Design:
 ;; - Manual trigger: user decides when to summarize (C-c m in gptel-mode)
@@ -12,6 +12,7 @@
 ;; - No race conditions: single-threaded, user-initiated
 ;; - Rolling summary: old MEMORIES + conversation -> new concise MEMORIES
 ;; - Auto-reloads agent profile after update so new memories take effect
+;; - Per-agent: reads/writes agents.d/<name>/MEMORIES.md (not the prompt.org)
 
 (require 'gptel)
 (require 'json)
@@ -32,6 +33,14 @@ prioritizing the most important and recent information."
 If the model does not respond within this time, the operation is aborted
 and a partial result (if any) is returned.
 Default is 300 (5 minutes) to accommodate large contexts with slow models."
+  :type 'integer
+  :group 'gptel)
+
+(defcustom my-gptel-memory-max-conversation-chars 100000
+  "Maximum number of characters of conversation text to send to the summarizer.
+If the conversation exceeds this length, it is truncated to the most recent
+portion. This prevents extremely large payloads that could cause timeouts or
+exceed API limits. 100000 chars is roughly 25K tokens."
   :type 'integer
   :group 'gptel)
 
@@ -57,29 +66,32 @@ a concise rolling summary of the agent's memory.")
 
 ;;; --- Internal functions ---
 
-(defun my-gptel--memory-extract-section (filepath)
-  "Extract the * MEMORIES section from FILEPATH.
-Returns a cons: (full-content . memories-text) where memories-text
-is everything after the '* MEMORIES' heading (or empty string if not found)."
-  (with-temp-buffer
-    (insert-file-contents filepath)
-    (let* ((content (buffer-string))
-           (marker "* MEMORIES")
-           (marker-pos (search-forward marker nil t)))
-      (if marker-pos
-          (progn
-            (forward-line 1)
-            (let ((memories (buffer-substring-no-properties (point) (point-max))))
-              (cons content (string-trim memories))))
-        (cons content "")))))
+(defun my-gptel--memory-get-agent-dir ()
+  "Return the directory path for the currently loaded agent.
+Based on my-gptel--current-agent-name or derived from the agent file path."
+  (let* ((agent-dir (expand-file-name "agents.d" user-emacs-directory))
+         (agent-name
+          (if (and (boundp 'my-gptel--current-agent-name)
+                   my-gptel--current-agent-name)
+              my-gptel--current-agent-name
+            ;; Fall back: derive from the prompt.org file path
+            (when (and (boundp 'my-gptel--current-agent-file)
+                       my-gptel--current-agent-file)
+              (file-name-nondirectory
+               (directory-file-name
+                (file-name-directory my-gptel--current-agent-file)))))))
+    (if agent-name
+        (expand-file-name agent-name agent-dir)
+      (error "No agent loaded. Load one with C-c a first."))))
 
-(defcustom my-gptel-memory-max-conversation-chars 100000
-  "Maximum number of characters of conversation text to send to the summarizer.
-If the conversation exceeds this length, it is truncated to the most recent
-portion. This prevents extremely large payloads that could cause timeouts or
-exceed API limits. 100000 chars is roughly 25K tokens."
-  :type 'integer
-  :group 'gptel)
+(defun my-gptel--memory-extract-memories (agent-dir)
+  "Read MEMORIES.md from AGENT-DIR. Returns the content string."
+  (let ((memories-file (expand-file-name "MEMORIES.md" agent-dir)))
+    (if (file-exists-p memories-file)
+        (with-temp-buffer
+          (insert-file-contents memories-file)
+          (string-trim (buffer-string)))
+      "")))
 
 (defun my-gptel--memory-extract-conversation ()
   "Extract conversation text from the current gptel buffer.
@@ -190,31 +202,16 @@ this limit, causing execve to fail with E2BIG."
       (when (file-exists-p payload-file)
         (delete-file payload-file)))))
 
-(defun my-gptel--memory-update-org-file (filepath new-memories)
-  "Update the * MEMORIES section in FILEPATH with NEW-MEMORIES.
-Replaces everything after the '* MEMORIES' heading with the new content.
+(defun my-gptel--memory-write-memories (agent-dir new-memories)
+  "Write NEW-MEMORIES to MEMORIES.md in AGENT-DIR.
 Uses atomic write (temp file + rename) for safety."
-  (let* ((content (with-temp-buffer
-                    (insert-file-contents filepath)
-                    (buffer-string)))
-         (marker "* MEMORIES")
-         (marker-pos (string-search marker content)))
-    (if marker-pos
-        (let* ((before (substring content 0 marker-pos))
-               (new-content (concat before marker "\n" new-memories "\n"))
-               (tmp-file (make-temp-file "gptel-memory-")))
-          (with-temp-file tmp-file
-            (insert new-content))
-          (rename-file tmp-file filepath t)
-          (format "SUCCESS: Updated MEMORIES in %s" filepath))
-      (let* ((new-content (concat content
-                                  (unless (string-suffix-p "\n" content) "\n")
-                                  "\n* MEMORIES\n" new-memories "\n"))
-             (tmp-file (make-temp-file "gptel-memory-")))
-        (with-temp-file tmp-file
-          (insert new-content))
-        (rename-file tmp-file filepath t)
-        (format "SUCCESS: Added MEMORIES section to %s" filepath)))))
+  (let* ((memories-file (expand-file-name "MEMORIES.md" agent-dir))
+         (tmp-file (make-temp-file "gptel-memory-")))
+    (with-temp-file tmp-file
+      (insert new-memories)
+      (insert "\n"))
+    (rename-file tmp-file memories-file t)
+    (format "SUCCESS: Updated MEMORIES.md in %s" agent-dir)))
 
 (defun my-gptel--memory-count-entries (memories-text)
   "Count the number of bullet-point entries in MEMORIES-TEXT."
@@ -228,20 +225,15 @@ Uses atomic write (temp file + rename) for safety."
 ;;; --- Interactive command ---
 
 (defun my-gptel-summarize-memories ()
-  "Summarize the current conversation into the loaded agent's MEMORIES section.
+  "Summarize the current conversation into the loaded agent's MEMORIES.md.
 Uses the configured Ollama backend and model to produce a rolling summary.
 Synchronous: Emacs stays responsive via accept-process-output but the user
 waits for completion. After updating, reloads the agent profile so new
 memories take effect immediately."
   (interactive)
   (condition-case err
-      (let* ((agent-file (if (and (boundp 'my-gptel--current-agent-file)
-                                   my-gptel--current-agent-file
-                                   (file-exists-p my-gptel--current-agent-file))
-                              my-gptel--current-agent-file
-                            (error "No agent profile loaded in this buffer. Load one with C-c a first.")))
-             (extracted (my-gptel--memory-extract-section agent-file))
-             (current-memories (cdr extracted))
+      (let* ((agent-dir (my-gptel--memory-get-agent-dir))
+             (current-memories (my-gptel--memory-extract-memories agent-dir))
              (conversation (my-gptel--memory-extract-conversation))
              (payload (my-gptel--memory-build-payload current-memories conversation))
              (model-name (if (symbolp gptel-model)
@@ -258,11 +250,12 @@ memories take effect immediately."
                 (user-error "%s" result))
             (let* ((new-memories (string-trim result))
                    (entry-count (my-gptel--memory-count-entries new-memories))
-                   (update-result (my-gptel--memory-update-org-file agent-file new-memories)))
+                   (update-result (my-gptel--memory-write-memories agent-dir new-memories)))
               (my-gptel-tool-reload-agent)
-              (message "[Memories updated: %d entries written to %s]"
+              (message "[Memories updated: %d entries written to %s/MEMORIES.md]"
                         entry-count
-                        (file-name-nondirectory agent-file))
+                        (file-name-nondirectory
+                         (directory-file-name agent-dir)))
               (format "%s. %d entries written." update-result entry-count)))))
     (error
      (message "Memory summarization failed: %s" (error-message-string err))

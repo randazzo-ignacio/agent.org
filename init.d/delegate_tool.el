@@ -35,18 +35,18 @@ while permitting multi-hop chains (e.g., A -> B -> A -> B).")
 ;;; Internal functions
 
 (defun my-gptel--load-agent-profile (agent-name)
-  "Load an agent profile by name from agents.d directory.
+  "Load an agent profile by name from agents.d/<name>/prompt.org.
 Returns the profile string or nil if not found."
   ;; Prevent path traversal - only allow alphanumeric, dash, underscore
   (unless (string-match-p "^[a-zA-Z0-9_-]+$" agent-name)
     (error "Invalid agent name: '%s'. Only alphanumeric, dash, underscore allowed." agent-name))
   (let* ((agent-dir (expand-file-name "agents.d" user-emacs-directory))
-         (filepath (expand-file-name (format "%s.org" agent-name) agent-dir)))
+         (prompt-path (expand-file-name (format "%s/prompt.org" agent-name) agent-dir)))
     ;; Extra safety: ensure filepath stays within agent-dir
-    (unless (string-prefix-p agent-dir (file-truename filepath))
+    (unless (string-prefix-p agent-dir (file-truename prompt-path))
       (error "Path traversal attempt blocked for agent: '%s'" agent-name))
-    (when (file-exists-p filepath)
-      (my-gptel-read-agent-profile filepath))))
+    (when (file-exists-p prompt-path)
+      (my-gptel-read-agent-profile prompt-path))))
 
 (defun my-gptel--delegate-completion-hook (start end)
   "Hook for `gptel-post-response-functions' to capture delegate response.
@@ -186,7 +186,7 @@ via `gptel--map-tool-args' -> `apply'."
  (gptel-make-tool
   :name "delegate"
   :description "Spawn a sub-agent with a specific profile to handle a sub-task. Returns the sub-agent's final response. Use for complex tasks requiring specialized expertise or parallel processing."
-  :args (list '(:name "agent" :type "string" :description "Profile name (e.g., 'coder', 'reviewer', 'researcher', 'ouroboros'). Must exist as .org file in agents.d/")
+  :args (list '(:name "agent" :type "string" :description "Profile name (e.g., 'coder', 'reviewer', 'researcher', 'mccarthy'). Must exist as agents.d/<name>/prompt.org")
               '(:name "task" :type "string" :description "What you want the sub-agent to accomplish. Be specific and detailed.")
               '(:name "context" :type "string" :description "Relevant context from the current conversation to pass along. Optional but recommended.")
               '(:name "timeout" :type "integer" :description "Maximum seconds to wait for delegate response. Default 600." :optional t))
