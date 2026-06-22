@@ -27,10 +27,11 @@ prioritizing the most important and recent information."
   :type 'integer
   :group 'gptel)
 
-(defcustom my-gptel-memory-timeout 120
+(defcustom my-gptel-memory-timeout 300
   "Timeout in seconds for the summarization API call.
 If the model does not respond within this time, the operation is aborted
-and a partial result (if any) is returned."
+and a partial result (if any) is returned.
+Default is 300 (5 minutes) to accommodate large contexts with slow models."
   :type 'integer
   :group 'gptel)
 
@@ -72,12 +73,27 @@ is everything after the '* MEMORIES' heading (or empty string if not found)."
               (cons content (string-trim memories))))
         (cons content "")))))
 
+(defcustom my-gptel-memory-max-conversation-chars 100000
+  "Maximum number of characters of conversation text to send to the summarizer.
+If the conversation exceeds this length, it is truncated to the most recent
+portion. This prevents extremely large payloads that could cause timeouts or
+exceed API limits. 100000 chars is roughly 25K tokens."
+  :type 'integer
+  :group 'gptel)
+
 (defun my-gptel--memory-extract-conversation ()
   "Extract conversation text from the current gptel buffer.
 Returns the plain text of the buffer up to point-max, with gptel
-text properties stripped. This includes all user messages and
-assistant responses in the chat."
-  (buffer-substring-no-properties (point-min) (point-max)))
+text properties stripped. If the conversation exceeds
+`my-gptel-memory-max-conversation-chars', only the most recent portion
+is retained (truncated from the beginning)."
+  (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+    (if (> (length text) my-gptel-memory-max-conversation-chars)
+        (let ((truncated
+               (substring text (- (length text) my-gptel-memory-max-conversation-chars))))
+          (format "[...conversation truncated to last %d chars...]\n%s"
+                  my-gptel-memory-max-conversation-chars truncated))
+      text)))
 
 (defun my-gptel--memory-build-payload (current-memories conversation)
   "Build the JSON payload string for the Ollama /api/chat endpoint.
@@ -99,8 +115,8 @@ CONVERSATION is the conversation text to summarize."
        :stream :json-false
        :options (:temperature 0.3
                  :top_p 0.9
-                 :num_ctx 32768
-                 :num_predict 4096))
+                 :num_ctx 131072
+                 :num_predict 8192))
      :null-object :null
      :false-object :json-false)))
 
@@ -108,7 +124,12 @@ CONVERSATION is the conversation text to summarize."
   "Send PAYLOAD (JSON string) to the Ollama /api/chat endpoint.
 Uses make-process + accept-process-output for responsive waiting.
 TIMEOUT in seconds. Returns the response content string, or
-an error string starting with 'Error:'."
+an error string starting with 'Error:'.
+
+Writes the payload to a temp file and uses 'curl -d @file' to avoid
+the Linux MAX_ARG_STRLEN limit (128KB per single argument). Long
+conversations with tool I/O can easily produce payloads exceeding
+this limit, causing execve to fail with E2BIG."
   (let* ((host (gptel-backend-host gptel-backend))
          (url (format "http://%s/api/chat" host))
          (buf (generate-new-buffer " *gptel-memory-summary*"))
@@ -116,14 +137,18 @@ an error string starting with 'Error:'."
          (deadline (time-add start-time (seconds-to-time timeout)))
          (done nil)
          (exit-code nil)
-         proc)
+         ;; Write payload to temp file to avoid ARG_MAX / MAX_ARG_STRLEN limits
+         (payload-file (make-temp-file "gptel-payload-")))
+    ;; Write payload to temp file
+    (with-temp-file payload-file
+      (insert payload))
     (setq proc
           (make-process
            :name "gptel-memory-curl"
            :buffer buf
            :command (list "curl" "-s" "-X" "POST" url
                           "-H" "Content-Type: application/json"
-                          "-d" payload)
+                          "-d" (format "@%s" payload-file))
            :sentinel
            (lambda (p event)
              (when (memq (process-status p) '(exit signal))
@@ -161,7 +186,9 @@ an error string starting with 'Error:'."
                (format "Error parsing JSON: %s\nRaw output:\n%s"
                        (error-message-string err) raw-output))))))
       (when (buffer-live-p buf)
-        (kill-buffer buf)))))
+        (kill-buffer buf))
+      (when (file-exists-p payload-file)
+        (delete-file payload-file)))))
 
 (defun my-gptel--memory-update-org-file (filepath new-memories)
   "Update the * MEMORIES section in FILEPATH with NEW-MEMORIES.
@@ -222,7 +249,8 @@ memories take effect immediately."
                            gptel-model)))
         (when (< (length (string-trim conversation)) 50)
           (error "Conversation is too short to summarize. Have a meaningful exchange first."))
-        (message "[Summarizing memories with %s...]" model-name)
+        (message "[Summarizing memories with %s... payload: %d chars, conversation: %d chars]"
+                 model-name (length payload) (length conversation))
         (let ((result (my-gptel--memory-call-ollama payload my-gptel-memory-timeout)))
           (if (string-prefix-p "Error:" result)
               (progn
