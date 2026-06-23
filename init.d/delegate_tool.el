@@ -7,6 +7,9 @@
 ;; argument (per gptel's :async convention) and calls it with the result when
 ;; the sub-agent completes. This keeps Emacs responsive during delegation and
 ;; allows nested delegation chains without freezing the editor.
+;;
+;; The sub-agent's output is streamed live into the parent buffer so the user
+;; can watch progress as it happens.
 
 (require 'gptel)
 (require 'cl-lib)
@@ -103,17 +106,82 @@ TIMEOUT is optional max seconds to wait (default 600)."
           (my-gptel--spawn-async-delegate
            callback agent task ctx timeout-secs profile)))))))
 
+(defun my-gptel--delegate-stream-fn (parent-buf parent-marker agent
+                                              stream-marker-ref stream-pos-ref)
+  "Return a stream hook function for the delegate buffer.
+PARENT-BUF is the parent buffer to mirror into.
+PARENT-MARKER is the position in the parent buffer to start streaming.
+AGENT is the delegate agent name (for the header).
+STREAM-MARKER-REF is a symbol holding the stream-marker (set dynamically).
+STREAM-POS-REF is a symbol holding the stream-pos marker (set dynamically)."
+  (lambda ()
+    (let ((stream-pos (symbol-value stream-pos-ref))
+          (stream-marker (symbol-value stream-marker-ref)))
+      (when (and (buffer-live-p parent-buf)
+                 stream-pos
+                 (marker-position stream-pos))
+        (let ((new-text
+               (buffer-substring-no-properties
+                (marker-position stream-pos) (point-max))))
+          (when (and new-text (string-match-p "\\S-" new-text))
+            (with-current-buffer parent-buf
+              (save-excursion
+                (unless stream-marker
+                  (goto-char parent-marker)
+                  (insert (format "--- Delegate '%s' streaming... ---\n" agent))
+                  (setq stream-marker (point-marker))
+                  (set-marker-insertion-type stream-marker t)
+                  (set stream-marker-ref stream-marker))
+                (goto-char stream-marker)
+                (insert new-text)
+                (set-marker stream-marker (point)))))
+          (set-marker stream-pos (point-max))
+          (set stream-pos-ref stream-pos))))))
+
+(defun my-gptel--delegate-completion-fn (buf callback agent completed-sym
+                                             timer-sym timeout-secs)
+  "Return a completion hook function for the delegate buffer.
+BUF is the delegate buffer.  CALLBACK is gptel's async callback.
+AGENT is the agent name.  COMPLETED-SYM is a symbol holding the completed flag.
+TIMER-SYM is a symbol holding the timer.  TIMEOUT-SECS is the timeout."
+  (lambda (start end)
+    (unless (symbol-value completed-sym)
+      (set completed-sym t)
+      (when (symbol-value timer-sym)
+        (cancel-timer (symbol-value timer-sym)))
+      (let ((response
+             (if (and (numberp start) (numberp end) (< start end))
+                 (buffer-substring-no-properties start end)
+               "")))
+        (when (buffer-live-p buf) (kill-buffer buf))
+        (funcall callback
+                 (if (and response (string-match-p "\\S-" response))
+                     (format "Delegate '%s' completed:\n\n%s" agent response)
+                   (format "Delegate '%s' returned empty response (timeout: %ds)."
+                           agent timeout-secs)))))))
+
 (defun my-gptel--spawn-async-delegate (callback agent task ctx timeout-secs profile)
-  "Spawn an async delegate buffer and send the task."
+  "Spawn an async delegate buffer and send the task.
+The sub-agent's streaming output is mirrored into the parent buffer
+so the user can watch progress in real time."
   (let* ((parent-depth (if (boundp 'my-gptel--delegate-depth)
                            my-gptel--delegate-depth 0))
          (task-id (format "delegate-%s-%d-%d" agent (emacs-pid) (float-time)))
          (buf (get-buffer-create (format "*gptel-delegate-%s*" task-id)))
          (full-prompt (format "DELEGATED TASK FROM PARENT AGENT\n==============================\n\nCONTEXT:\n%s\n\nTASK:\n%s"
                               ctx task))
-         (timer nil)
-         (completed nil)
+         (parent-buf (current-buffer))
+         (parent-marker (point-marker))
+         ;; Use symbols for mutable state shared with hook closures
+         (stream-marker-sym (make-symbol "stream-marker"))
+         (stream-pos-sym (make-symbol "stream-pos"))
+         (completed-sym (make-symbol "completed"))
+         (timer-sym (make-symbol "timer"))
          (resp-start nil))
+    (set stream-marker-sym nil)
+    (set stream-pos-sym nil)
+    (set completed-sym nil)
+    (set timer-sym nil)
     (with-current-buffer buf
       (text-mode)
       (gptel-mode 1)
@@ -126,37 +194,42 @@ TIMEOUT is optional max seconds to wait (default 600)."
                                     (equal (gptel-tool-name tool) "delegate"))
                                   (copy-sequence gptel-tools))))
 
-      ;; Completion hook: called by gptel at DONE, ERRS, or ABRT state.
-      (let ((completion-fn
-             (lambda (start end)
-               (unless completed
-                 (setq completed t)
-                 (when timer (cancel-timer timer))
-                 (let ((response
-                        (if (and (numberp start) (numberp end) (< start end))
-                            (buffer-substring-no-properties start end)
-                          "")))
-                   (when (buffer-live-p buf) (kill-buffer buf))
-                   (funcall callback
-                            (if (and response (string-match-p "\\S-" response))
-                                (format "Delegate '%s' completed:\n\n%s" agent response)
-                              (format "Delegate '%s' returned empty response (timeout: %ds)."
-                                      agent timeout-secs))))))))
-        (add-hook 'gptel-post-response-functions completion-fn nil t)
+      ;; Stream hook: mirror each chunk into the parent buffer.
+      ;; gptel-post-stream-hook runs in the delegate buffer after each
+      ;; streaming text insertion (see gptel-curl--stream-insert-response).
+      ;; We track our own position (stream-pos) to know what's new since
+      ;; the last hook call.  This is independent of gptel's internal
+      ;; tracking-marker, which we don't have reliable access to during
+      ;; streaming (gptel--fsm-last is only set at completion/tool-call
+      ;; states, NOT during streaming -- this was the root cause of the
+      ;; streaming not working in the previous version).
+      (let ((stream-fn
+             (my-gptel--delegate-stream-fn parent-buf parent-marker agent
+                                           stream-marker-sym stream-pos-sym)))
+        (add-hook 'gptel-post-stream-hook stream-fn nil t)
 
-        ;; Timeout timer: fires once after timeout-secs.
-        (setq timer
-              (run-with-timer
-               timeout-secs nil
-               (lambda ()
-                 (my-gptel--delegate-timeout-handler
-                  buf callback agent completed
-                  resp-start timeout-secs))))
+        ;; Completion hook: called by gptel at DONE, ERRS, or ABRT state.
+        (let ((completion-fn
+               (my-gptel--delegate-completion-fn
+                buf callback agent completed-sym timer-sym timeout-secs)))
+          (add-hook 'gptel-post-response-functions completion-fn nil t)
 
-        ;; Insert the prompt text into the buffer and send.
-        (insert full-prompt)
-        (setq resp-start (point))
-        (gptel-send)))))
+          ;; Timeout timer: fires once after timeout-secs.
+          (set timer-sym
+               (run-with-timer
+                timeout-secs nil
+                (lambda ()
+                  (my-gptel--delegate-timeout-handler
+                   buf callback agent (symbol-value completed-sym)
+                   resp-start timeout-secs))))
+
+          ;; Insert the prompt text into the buffer and send.
+          (insert full-prompt)
+          (setq resp-start (point))
+          ;; Initialize stream position tracker at end of prompt text.
+          ;; Streaming response will be inserted after this point by gptel.
+          (set stream-pos-sym (point-marker))
+          (gptel-send))))))
 
 ;; Register the delegate tool (async)
 (add-to-list 'gptel-tools
