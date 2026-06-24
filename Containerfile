@@ -58,5 +58,5 @@ RUN microdnf install -y \
 # ---------------------------------------------------------------------------
 WORKDIR /root
 
-# Emacs is the entrypoint; .emacs.d is mounted at runtime via aios.sh
+# Emacs is the entrypoint; .emacs.d is mounted at runtime via emacboros.sh
 ENTRYPOINT ["emacs", "--no-x", "--load", "/root/.emacs.d/init.el"]

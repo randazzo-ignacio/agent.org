@@ -2,7 +2,7 @@
 
 ## Container Escape Prevention
 
-- [ ] **Audit all container mounts** — review every `-v` line in `aios.sh`, remove any writable host paths that the host will execute or interpret
+- [ ] **Audit all container mounts** — review every `-v` line in `emacboros.sh`, remove any writable host paths that the host will execute or interpret
 - [ ] **Remove `.git` directory mounts** — if repos are needed for reference, mount read-only or copy working tree without `.git/`
 - [ ] **Never mount `~/.ssh/`** — SSH authorized_keys injection is a direct escape vector
 - [ ] **Never mount shell RC files** — `~/.bashrc`, `~/.zshrc`, `~/.profile` are executed on host shell spawn
@@ -12,7 +12,7 @@
 - [ ] **Make `agents.d/` read-only in the container** — prevents the AI from modifying its own constraints or other agents' prompts
 - [ ] **Make `.emacs.d/` read-only in the container** — prevents modification of init.el, tool definitions, and Emacs Lisp code
 - [ ] **Create a designated writable workspace** (`/workspace/`) as the only writable path inside the container
-- [ ] **Add a preflight mount audit script** to `aios.sh` that scans `/proc/mounts` and refuses to start if dangerous paths are writable (`.git/hooks`, `.ssh`, `.bashrc`, `.zshrc`, `.profile`, `docker.sock`, `cron.d`, `spool/cron`, `systemd`, `.emacs.d`)
+- [ ] **Add a preflight mount audit script** to `emacboros.sh` that scans `/proc/mounts` and refuses to start if dangerous paths are writable (`.git/hooks`, `.ssh`, `.bashrc`, `.zshrc`, `.profile`, `docker.sock`, `cron.d`, `spool/cron`, `systemd`, `.emacs.d`)
 - [ ] **Test the hardening** — attempt container escape via all known vectors, verify each is blocked
 
 ## Prompt Injection Resistance

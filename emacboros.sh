@@ -30,16 +30,16 @@ CONTAINER_NAME="emacs-ai-os"
 # Build the container image from Containerfile
 # =============================================================================
 build() {
-    echo "[aios] Building ${IMAGE_NAME} from ${SCRIPT_DIR}/Containerfile..."
+    echo "[emacboros] Building ${IMAGE_NAME} from ${SCRIPT_DIR}/Containerfile..."
     podman build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Containerfile"
-    echo "[aios] Build complete."
+    echo "[emacboros] Build complete."
 }
 
 # =============================================================================
 # Run the container with .emacs.d mounted
 # =============================================================================
 run() {
-    echo "[aios] Starting ${CONTAINER_NAME}..."
+    echo "[emacboros] Starting ${CONTAINER_NAME}..."
     podman run \
         --rm -it --name "${CONTAINER_NAME}" \
         -v "${HOME}/.emacs.d:/root/.emacs.d:Z" \

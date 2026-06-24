@@ -52,7 +52,7 @@ A fully containerized, locally-hosted AI workspace inside Emacs. This project le
      - =test-check.el= :: Tests for =check_elisp_tool.el= (clean files, unbalanced parens, missing files, no .elc artifacts).
      - =test-gptel.el= :: Tests for =gptel_setup.el= (backend defined, model defined, host verification).
      - =test-smoke.el= :: End-to-end smoke tests (module loadability, tool count, tool names, agent dirs). Tagged =:smoke=.
-  - =aios.sh= :: Helper script for container management (build, run, rebuild subcommands).
+  - =emacboros.sh= :: Helper script for container management (build, run, rebuild subcommands).
 
 * The Agent System
 
