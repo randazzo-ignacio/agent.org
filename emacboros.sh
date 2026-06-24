@@ -44,6 +44,14 @@ run() {
         --rm -it --name "${CONTAINER_NAME}" \
 	-v "$(dirname ${BASH_SOURCE[0]})/agents.d:/root/.emacs.d/agents.d:Z" \
 	-v "$(dirname ${BASH_SOURCE[0]})/.git:/root/.emacs.d/.git:ro" \
+	-v "$(dirname ${BASH_SOURCE[0]})/containers:/root/.emacs.d/.git:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/emacboros.sh:/root/.emacs.d/.git:ro" \
+	-v "$(dirname ${BASH_SOURCE[0]})/init.d:/root/.emacs.d/.git:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/init.el:/root/.emacs.d/.git:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/LICENSE:/root/.emacs.d/.git:ro" \
+	-v "$(dirname ${BASH_SOURCE[0]})/README.org:/root/.emacs.d/.git:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/test:/root/.emacs.d/.git:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/workspace:/root/.emacs.d/.git:Z" \
         "${IMAGE_NAME}"
 }
 
