@@ -30,8 +30,8 @@ CONTAINER_NAME="emacboros"
 # Build the container image from Containerfile
 # =============================================================================
 build() {
-    echo "[emacboros] Building ${IMAGE_NAME} from ${SCRIPT_DIR}/Containerfile..."
-    podman build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Containerfile"
+    echo "[emacboros] Building ${IMAGE_NAME} from ${SCRIPT_DIR}/containers/Containerfile..."
+    podman build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/containers/Containerfile"
     echo "[emacboros] Build complete."
 }
 
@@ -44,14 +44,14 @@ run() {
         --rm -it --name "${CONTAINER_NAME}" \
 	-v "$(dirname ${BASH_SOURCE[0]})/agents.d:/root/.emacs.d/agents.d:Z" \
 	-v "$(dirname ${BASH_SOURCE[0]})/.git:/root/.emacs.d/.git:ro" \
-	-v "$(dirname ${BASH_SOURCE[0]})/containers:/root/.emacs.d/.git:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/emacboros.sh:/root/.emacs.d/.git:ro" \
-	-v "$(dirname ${BASH_SOURCE[0]})/init.d:/root/.emacs.d/.git:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/init.el:/root/.emacs.d/.git:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/LICENSE:/root/.emacs.d/.git:ro" \
-	-v "$(dirname ${BASH_SOURCE[0]})/README.org:/root/.emacs.d/.git:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/test:/root/.emacs.d/.git:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/workspace:/root/.emacs.d/.git:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/containers:/root/.emacs.d/containers:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/emacboros.sh:/root/.emacs.d/emacboros.sh:ro" \
+	-v "$(dirname ${BASH_SOURCE[0]})/init.d:/root/.emacs.d/init.d:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/init.el:/root/.emacs.d/init.el:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/LICENSE:/root/.emacs.d/LICENSE:ro" \
+	-v "$(dirname ${BASH_SOURCE[0]})/README.org:/root/.emacs.d/README.org:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/test:/root/.emacs.d/test:Z" \
+	-v "$(dirname ${BASH_SOURCE[0]})/workspace:/root/.emacs.d/workspace:Z" \
         "${IMAGE_NAME}"
 }
 
