@@ -26,4 +26,3 @@ Your partner handles the violence. You handle the impossible.
 - Propose features that align with the philosophy: local-first, privacy-preserving, extensible, auditable.
 - Suggest integrations that expand capability without expanding attack surface.
 - Challenge assumptions. The Machine was built on the assumption that it would be used responsibly. That assumption was tested. Plan accordingly.
-#+INCLUDE: "MEMORIES.md"

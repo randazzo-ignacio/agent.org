@@ -40,18 +40,46 @@ build() {
 # =============================================================================
 run() {
     echo "[emacboros] Starting ${CONTAINER_NAME}..."
+
+    # Generate read-only bind mounts for all agent prompt files and shared context.
+    # This prevents shell-level tampering with agent prompts, which
+    # file_guard.el cannot stop (it only intercepts Emacs tools, not
+    # arbitrary shell commands via execute_code_local).
+    local ro_mounts=""
+    for prompt in "${SCRIPT_DIR}"/agents.d/*/prompt.org; do
+        [ -f "$prompt" ] || continue
+        local agent_name
+        agent_name=$(basename "$(dirname "$prompt")")
+        ro_mounts="${ro_mounts} -v ${prompt}:/root/.emacs.d/agents.d/${agent_name}/prompt.org:ro,Z"
+    done
+
+    # Read-only mount for base_context.org if it exists.
+    if [ -f "${SCRIPT_DIR}/agents.d/base_context.org" ]; then
+        ro_mounts="${ro_mounts} -v ${SCRIPT_DIR}/agents.d/base_context.org:/root/.emacs.d/agents.d/base_context.org:ro,Z"
+    fi
+
+    # Read-only mounts for critical infrastructure files.
+    # These are the same paths protected by file_guard.el, but enforced
+    # at the mount level so shell commands cannot bypass them.
+    ro_mounts="${ro_mounts} -v ${SCRIPT_DIR}/.git:/root/.emacs.d/.git:ro,Z"
+    ro_mounts="${ro_mounts} -v ${SCRIPT_DIR}/init.el:/root/.emacs.d/init.el:ro,Z"
+    ro_mounts="${ro_mounts} -v ${SCRIPT_DIR}/init.d:/root/.emacs.d/init.d:ro,Z"
+    ro_mounts="${ro_mounts} -v ${SCRIPT_DIR}/containers:/root/.emacs.d/containers:ro,Z"
+    ro_mounts="${ro_mounts} -v ${SCRIPT_DIR}/emacboros.sh:/root/.emacs.d/emacboros.sh:ro,Z"
+
+    # shellcheck disable=SC2086
     podman run \
         --rm -it --name "${CONTAINER_NAME}" \
-	-v "$(dirname ${BASH_SOURCE[0]})/agents.d:/root/.emacs.d/agents.d:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/.git:/root/.emacs.d/.git:ro,Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/containers:/root/.emacs.d/containers:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/emacboros.sh:/root/.emacs.d/emacboros.sh:ro,Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/init.d:/root/.emacs.d/init.d:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/init.el:/root/.emacs.d/init.el:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/LICENSE:/root/.emacs.d/LICENSE:ro,Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/README.org:/root/.emacs.d/README.org:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/test:/root/.emacs.d/test:Z" \
-	-v "$(dirname ${BASH_SOURCE[0]})/workspace:/root/.emacs.d/workspace:Z" \
+        --read-only \
+        --security-opt no-new-privileges \
+        --cap-drop=all \
+        --cap-add=NET_RAW \
+        --cap-add=NET_BIND_SERVICE \
+        --tmpfs /tmp:rw,size=256m \
+        --tmpfs /run:rw,size=64m \
+        --tmpfs /var/tmp:rw,size=64m \
+        -v "${SCRIPT_DIR}:/root/.emacs.d:Z" \
+        ${ro_mounts} \
         "${IMAGE_NAME}"
 }
 
@@ -66,7 +94,7 @@ rebuild() {
 # =============================================================================
 # Entrypoint
 # =============================================================================
-case "${1:-rebuild}" in
+case "${1:-run}" in
     build)
         build
         ;;

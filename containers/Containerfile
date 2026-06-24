@@ -56,10 +56,14 @@ RUN microdnf install -y \
 RUN mkdir -p /emacboros/workspace
 RUN mkdir -p /root/.emacs.d
 
+# Preflight mount audit script — runs before Emacs to verify container hardening
+COPY preflight.sh /usr/local/bin/preflight.sh
+RUN chmod +x /usr/local/bin/preflight.sh
+
 # ---------------------------------------------------------------------------
 # Working directory
 # ---------------------------------------------------------------------------
 WORKDIR /emacboros/workspace
 
-# Emacs is the entrypoint; .emacs.d is mounted at runtime via emacboros.sh
-ENTRYPOINT ["emacs", "--no-x", "--load", "/root/.emacs.d/init.el"]
+# Preflight audit runs first, then Emacs starts if the audit passes
+ENTRYPOINT ["/bin/bash", "-c", "preflight.sh && exec emacs --no-x --load /root/.emacs.d/init.el"]
